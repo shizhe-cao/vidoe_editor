@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 环境与密钥
+.env
+
+# 运行产物（任务输出 / 用户上传 / 日志）
+outputs/
+uploads/
+server.log
+
+# 测试素材（体积较大，需另行获取）
+test_assets/

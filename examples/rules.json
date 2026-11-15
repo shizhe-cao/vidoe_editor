@@ -1,0 +1,20 @@
+{
+  "clips": [
+    { "video_index": 0, "start": 0, "duration": 5, "speed": 1 },
+    { "video_index": 1, "start": 2, "duration": 6, "speed": 2 },
+    { "video_index": 2, "start": 1, "duration": 4, "speed_curve": { "type": "ease_in_out", "low": 0.5, "high": 2 } }
+  ],
+  "transition": { "type": "fade", "duration": 0.5 },
+  "audio": {
+    "loop": true,
+    "volume": 0.8,
+    "fade_in": 1.0,
+    "fade_out": 2.0,
+    "keep_original": false
+  },
+  "output": {
+    "resolution": [1920, 1080],
+    "fps": 30,
+    "duration_policy": "follow_clips"
+  }
+}

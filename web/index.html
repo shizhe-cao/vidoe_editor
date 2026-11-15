@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>视频合成 Agent</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #181b24; --panel2: #1f2330; --border: #2c3142;
+    --text: #e7eaf2; --muted: #8b91a5; --accent: #6c7bff; --accent2: #4f5ee0;
+    --ok: #3fb96f; --err: #e05a5a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    display: flex; justify-content: center; padding: 32px 16px;
+  }
+  .wrap { width: 100%; max-width: 860px; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 15px; margin-bottom: 14px; color: var(--text); }
+  .dropzone {
+    border: 2px dashed var(--border); border-radius: 10px; padding: 24px;
+    text-align: center; color: var(--muted); cursor: pointer; transition: .2s;
+    font-size: 13px;
+  }
+  .dropzone.hover { border-color: var(--accent); color: var(--accent); }
+  .filelist { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .fileitem {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--panel2); border-radius: 8px; padding: 8px 12px; font-size: 13px;
+    flex-wrap: wrap;
+  }
+  .fileitem .meta { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+  .fileitem .thumb {
+    width: 96px; height: 54px; flex-shrink: 0; object-fit: cover;
+    border-radius: 6px; background: #000; cursor: pointer;
+  }
+  .fileitem .thumb:hover { outline: 2px solid var(--accent); }
+  .fileitem .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fileitem .tag { color: var(--muted); font-size: 12px; flex-shrink: 0; margin-left: 12px; }
+  .fileitem .del { color: var(--err); cursor: pointer; margin-left: 12px; font-weight: bold; }
+  .fileitem .preview {
+    display: none; width: 100%; margin-top: 8px;
+  }
+  .fileitem .preview.open { display: block; }
+  .fileitem .preview video { width: 100%; max-width: 480px; border-radius: 8px; background: #000; display: block; }
+  .fileitem .preview img { width: 100%; max-width: 480px; border-radius: 8px; display: block; }
+  .fileitem audio { height: 32px; flex-shrink: 0; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .tab {
+    padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); cursor: pointer; font-size: 13px;
+  }
+  .tab.active { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+  textarea {
+    width: 100%; min-height: 120px; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+    font-family: inherit; font-size: 13px; resize: vertical;
+  }
+  textarea.json { font-family: "SF Mono", Consolas, monospace; }
+  .btn {
+    width: 100%; padding: 14px; border: none; border-radius: 10px; cursor: pointer;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #fff; font-size: 15px; font-weight: 600; margin-top: 8px;
+  }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .progress-wrap { display: none; }
+  .bar-outer { height: 10px; background: var(--panel2); border-radius: 999px; overflow: hidden; }
+  .bar-inner { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--ok)); transition: width .4s; }
+  .stage { margin: 10px 0 6px; font-size: 13px; display: flex; justify-content: space-between; }
+  .stage .pct { color: var(--accent); font-weight: 600; }
+  .log { margin-top: 12px; background: var(--panel2); border-radius: 8px; padding: 12px; font-size: 12px; color: var(--muted); max-height: 120px; overflow-y: auto; }
+  .result { display: none; }
+  .result video, video#player { width: 100%; border-radius: 10px; background: #000; margin-bottom: 12px; }
+  .plan-box { background: var(--panel2); border-radius: 8px; padding: 12px; font-size: 12px; font-family: monospace; white-space: pre-wrap; word-break: break-all; max-height: 220px; overflow-y: auto; }
+  .errbox { display: none; background: rgba(224,90,90,.12); border: 1px solid var(--err); color: #ff9c9c; border-radius: 8px; padding: 12px; font-size: 13px; margin-top: 12px; white-space: pre-wrap; }
+  .status-chip { font-size: 12px; padding: 2px 10px; border-radius: 999px; }
+  .status-chip.done { background: rgba(63,185,111,.15); color: var(--ok); }
+  .status-chip.failed { background: rgba(224,90,90,.15); color: var(--err); }
+  .status-chip.run { background: rgba(108,123,255,.15); color: var(--accent); }
+  a.dl { color: var(--accent); font-size: 13px; }
+  .dz-row { display: flex; gap: 10px; }
+  .dz-row .dropzone { flex: 1; }
+  .btn-srv {
+    padding: 0 16px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--panel2); color: var(--accent); cursor: pointer; font-size: 13px;
+    white-space: nowrap;
+  }
+  .btn-srv:hover { border-color: var(--accent); }
+  .fileitem .src-tag {
+    font-size: 11px; padding: 1px 8px; border-radius: 999px; flex-shrink: 0;
+    background: rgba(108,123,255,.12); color: var(--accent); margin-left: 8px;
+  }
+  .fileitem .src-tag.img-tag { background: rgba(63,185,111,.12); color: var(--ok); }
+  /* 素材选择弹窗 */
+  .modal-mask {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    z-index: 100; align-items: center; justify-content: center;
+  }
+  .modal-mask.open { display: flex; }
+  .modal {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    width: min(560px, 92vw); max-height: 80vh; display: flex; flex-direction: column;
+  }
+  .modal header {
+    padding: 16px 20px; font-size: 15px; display: flex; justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal header .close { color: var(--muted); cursor: pointer; font-size: 18px; }
+  .modal .body { padding: 12px 20px; overflow-y: auto; }
+  .modal .hint { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+  .asset-row {
+    display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 8px;
+    background: var(--panel2); margin-bottom: 8px; cursor: pointer; font-size: 13px;
+  }
+  .asset-row:hover { outline: 1px solid var(--accent); }
+  .asset-row .chk { color: var(--accent); font-weight: bold; visibility: hidden; }
+  .asset-row.picked .chk { visibility: visible; }
+  .asset-row.picked { outline: 1px solid var(--accent); }
+  .asset-row .info { flex: 1; overflow: hidden; }
+  .asset-row .meta { color: var(--muted); font-size: 12px; }
+  /* 片段设置面板 */
+  .clipcfg {
+    width: 100%; margin-top: 10px; padding: 12px; border-top: 1px dashed var(--border);
+  }
+  .cfg-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; flex-wrap: wrap; }
+  .cfg-row label { display: flex; align-items: center; gap: 6px; }
+  .cfg-row input[type=number] {
+    width: 72px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 13px;
+  }
+  .cfg-row input[type=range] { width: 160px; accent-color: var(--accent); }
+  .cfg-row select {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 8px; font-size: 13px;
+  }
+  .cfg-head { color: var(--accent); font-weight: 600; margin-bottom: 6px; }
+  .cfg-dur { color: var(--muted); font-size: 12px; }
+  .cfg-reset { color: var(--muted); cursor: pointer; text-decoration: underline; font-size: 12px; margin-left: auto; }
+  .cfg-speed-val { color: var(--accent); font-weight: 600; min-width: 44px; display: inline-block; }
+  .cfg-curve-box { margin-top: 6px; }
+  .cfg-curve-box canvas { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; cursor: crosshair; touch-action: none; }
+  .curve-hint { color: var(--muted); font-size: 11px; margin: 6px 0 2px; }
+  .cfg-func-box .cfg-row input[type=text] {
+    width: 220px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 13px;
+    font-family: "SF Mono", Consolas, monospace;
+  }
+  .fn-err { color: var(--err); font-size: 12px; }
+  .curve-tl { color: var(--ok); font-size: 12px; font-weight: 600; }
+  .global-cfg {
+    display: none; margin-top: 12px; padding: 10px 12px; background: var(--panel2);
+    border-radius: 8px; font-size: 13px; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .global-cfg.show { display: flex; }
+  .global-cfg select, .global-cfg input[type=number] {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 8px; font-size: 13px;
+  }
+  .global-cfg input[type=number] { width: 60px; }
+  .global-cfg .note { color: var(--muted); font-size: 11px; }
+  .global-cfg .trans-switch, .global-cfg .lossless-switch { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .global-cfg .trans-switch input, .global-cfg .lossless-switch input { accent-color: var(--accent); }
+  .global-cfg.trans-off .trans-ctrls, .global-cfg.trans-off .trans-demo-box { display: none; }
+  .global-cfg .trans-off-note { display: none; color: var(--muted); }
+  .global-cfg.trans-off .trans-off-note { display: inline; }
+  .trans-demo-box { display: flex; flex-direction: column; gap: 4px; }
+  .trans-demo-box .trans-demo-label { color: var(--muted); font-size: 11px; }
+  .trans-demo-box canvas {
+    width: 232px; height: 96px; border-radius: 8px;
+    border: 1px solid var(--border); background: #000;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎬 视频合成 Agent</h1>
+  <div class="sub">上传视频、图片与背景音乐，用自然语言或 JSON 描述合成规则，AI 规划 + FFmpeg 渲染成片</div>
+
+  <div class="card">
+    <h2>1. 源素材（视频 + 图片）</h2>
+    <div class="dz-row">
+      <label class="dropzone" id="dz-video" for="file-video">点击选择、拖拽或 Ctrl+V 粘贴视频/图片文件（可多选，图片可设展示时长）</label>
+      <button class="btn-srv" id="pick-video-srv" type="button">📦 从服务器选择</button>
+    </div>
+    <input type="file" id="file-video" accept="video/*,image/*" multiple hidden>
+    <div class="filelist" id="list-video"></div>
+    <div class="global-cfg" id="global-cfg">
+      <label class="trans-switch"><input type="checkbox" id="trans-enable" checked> ⏩ 启用转场（手动模式生效）</label>
+      <label class="lossless-switch"><input type="checkbox" id="lossless-enable"> 🎞 不压缩（无损画质，文件较大）</label>
+      <span class="trans-ctrls">
+        <select id="trans-type">
+          <option value="fade" selected>淡入淡出 fade</option>
+          <option value="dissolve">溶解 dissolve</option>
+          <option value="wipeleft">左擦除</option>
+          <option value="wiperight">右擦除</option>
+          <option value="slideup">上滑入</option>
+        </select>
+        <span>时长</span>
+        <input type="number" id="trans-dur" value="0.5" min="0" max="3" step="0.1"> 秒
+      </span>
+      <span class="trans-off-note">未启用：片段之间硬切直连</span>
+      <div class="trans-demo-box">
+        <span class="trans-demo-label">转场效果演示（片段 A → B 循环）</span>
+        <canvas id="trans-demo"></canvas>
+      </div>
+      <span class="note">配置任一视频的片段设置后，将按手动配置直接生成计划（不经过 AI）</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2. 背景音乐（可选）</h2>
+    <div class="dz-row">
+      <label class="dropzone" id="dz-music" for="file-music">点击选择、拖拽或 Ctrl+V 粘贴音频文件</label>
+      <button class="btn-srv" id="pick-music-srv" type="button">📦 从服务器选择</button>
+    </div>
+    <input type="file" id="file-music" accept="audio/*" hidden>
+    <div class="filelist" id="list-music"></div>
+  </div>
+
+  <div class="card">
+    <h2>3. 合成规则</h2>
+    <div class="tabs">
+      <button class="tab active" data-mode="text">自然语言</button>
+      <button class="tab" data-mode="json">结构化 JSON</button>
+    </div>
+    <textarea id="rule" class="" placeholder="例如：每个视频取中间 4 秒，第二段 2 倍速快放，最后一段从 0.5 倍慢慢加速到 2 倍（曲线变速），用 0.5 秒淡入淡出转场，配背景音乐循环对齐成片时长，输出 1080p 30fps。"></textarea>
+    <button class="btn" id="submit-btn">🚀 开始合成</button>
+    <div class="errbox" id="errbox"></div>
+  </div>
+
+  <div class="card progress-wrap" id="progress-card">
+    <h2>合成进度 <span class="status-chip run" id="status-chip">运行中</span></h2>
+    <div class="stage"><span id="stage-detail">等待开始</span><span class="pct" id="pct">0%</span></div>
+    <div class="bar-outer"><div class="bar-inner" id="bar"></div></div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="card result" id="result-card">
+    <h2>合成结果</h2>
+    <video id="player" controls></video>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <a class="dl" id="dl-link" download>⬇ 下载成片</a>
+      <span style="color:var(--muted); font-size:12px;" id="duration-info"></span>
+    </div>
+    <h2 style="margin-top:16px;">AI 合成计划</h2>
+    <div class="plan-box" id="plan-box"></div>
+  </div>
+  <div class="modal-mask" id="asset-modal">
+    <div class="modal">
+      <header><span id="modal-title">选择服务器素材</span><span class="close" id="modal-close">✕</span></header>
+      <div class="body">
+        <div class="hint">提示：浏览器无法弹出文件对话框时，可从这里直接选用服务器素材（test_assets 目录，含视频与图片）</div>
+        <div id="asset-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let videos = [], music = null, ruleMode = 'text';
+// 服务器素材：{name, duration, size_mb, resolution?}
+let srvVideos = [], srvMusic = null;
+
+// ---- 文件选择 ----
+// dropzone 为 <label for=input>，点击由浏览器原生触发文件选择，不走 JS
+function bindDrop(dzId, inputId, handler) {
+  const dz = $(dzId), input = $(inputId);
+  input.onchange = () => { handler([...input.files]); input.value = ''; };
+  dz.ondragover = e => { e.preventDefault(); dz.classList.add('hover'); };
+  dz.ondragleave = () => dz.classList.remove('hover');
+  dz.ondrop = e => {
+    e.preventDefault(); dz.classList.remove('hover');
+    handler([...e.dataTransfer.files]);
+  };
+  // 兼容：label 激活被拦截时仍可用 JS 点击兜底
+  dz.addEventListener('click', e => {
+    if (e.detail === 0) { e.preventDefault(); input.click(); }
+  });
+}
+function isVideoFile(f) {
+  return f.type.startsWith('video/') || /\.(mp4|mov|mkv|webm|avi)$/i.test(f.name);
+}
+function isImageFile(f) {
+  return f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp)$/i.test(f.name);
+}
+function isAudioFile(f) {
+  return f.type.startsWith('audio/') || /\.(mp3|m4a|aac|wav|ogg|flac)$/i.test(f.name);
+}
+// 素材（视频或图片）统一进入源素材列表，按加入顺序排列
+function addLocalFiles(fs) {
+  fs.filter(f => isVideoFile(f) || isImageFile(f)).forEach(f => videos.push(f));
+  const mus = fs.find(isAudioFile);
+  if (mus) music = mus;
+  renderVideoList();
+  renderMusicList();
+}
+bindDrop('dz-video', 'file-video', fs => {
+  fs.filter(f => isVideoFile(f) || isImageFile(f)).forEach(f => videos.push(f));
+  renderVideoList();
+});
+bindDrop('dz-music', 'file-music', fs => {
+  const f = fs.find(isAudioFile);
+  if (f) { music = f; renderMusicList(); }
+});
+// 剪贴板粘贴：直接 Ctrl+V 粘贴本地文件
+document.addEventListener('paste', e => {
+  const files = [...(e.clipboardData?.files || [])];
+  if (files.length) {
+    e.preventDefault();
+    addLocalFiles(files);
+  }
+});
+// 为 File 生成（并缓存）本地预览 URL，删除时释放
+function fileUrl(f) {
+  if (!f._url) f._url = URL.createObjectURL(f);
+  return f._url;
+}
+function revokeUrl(f) {
+  if (f && f._url) { URL.revokeObjectURL(f._url); f._url = null; }
+}
+function fmtDur(s) {
+  if (!isFinite(s)) return '';
+  const m = Math.floor(s / 60), r = Math.round(s % 60);
+  return `${m}:${String(r).padStart(2, '0')}`;
+}
+function fmtSize(bytes) {
+  if (bytes < 10240) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+// 素材项是否为静态图片（本地 File 或服务器 asset）
+function itemIsImage(item) {
+  return item.kind === 'local' ? isImageFile(item.file) : !!item.asset.image;
+}
+function renderVideoList() {
+  const el = $('list-video');
+  el.innerHTML = '';
+  const items = [
+    ...videos.map(f => ({ kind: 'local', file: f })),
+    ...srvVideos.map(a => ({ kind: 'srv', asset: a })),
+  ];
+  items.forEach((item, i) => {
+    const isImg = itemIsImage(item);
+    const div = document.createElement('div');
+    div.className = 'fileitem';
+    const url = item.kind === 'local' ? fileUrl(item.file) : `/api/assets/file/${encodeURIComponent(item.asset.name)}`;
+    const name = item.kind === 'local' ? item.file.name : item.asset.name;
+    const sizeMb = item.kind === 'local' ? fmtSize(item.file.size) : `${item.asset.size_mb} MB`;
+    div.innerHTML = `
+      <div class="meta">
+        ${isImg
+          ? `<img class="thumb" src="${url}" alt="${name}" title="点击展开预览与展示时长设置">`
+          : `<video class="thumb" src="${url}#t=0.1" muted preload="metadata" title="点击展开播放与片段设置"></video>`}
+        <span class="name" title="${name}">${i}: ${name}</span>
+        ${item.kind === 'srv' ? '<span class="src-tag">服务器</span>' : ''}
+        ${isImg ? '<span class="src-tag img-tag">图片</span>' : ''}
+      </div>
+      <span class="tag dur" data-dur></span>
+      <span class="tag">${sizeMb}</span>
+      <span class="del">✕</span>
+      <div class="preview">
+        ${isImg ? `<img src="${url}" alt="${name}">` : `<video controls preload="none" src="${url}"></video>`}
+        <div class="clipcfg"></div>
+      </div>`;
+    div.querySelector('.del').onclick = () => {
+      if (item.kind === 'local') { revokeUrl(item.file); videos.splice(videos.indexOf(item.file), 1); }
+      else { srvVideos.splice(srvVideos.indexOf(item.asset), 1); }
+      renderVideoList();
+    };
+    const thumb = div.querySelector('.thumb');
+    const pv = div.querySelector('.preview');
+    const pvVideo = pv.querySelector('video');
+    thumb.onclick = () => {
+      const open = pv.classList.toggle('open');
+      if (!open && pvVideo) pvVideo.pause();
+    };
+    const dur = div.querySelector('.dur');
+    if (!isImg) thumb.addEventListener('loadedmetadata', () => {
+      if (item.kind === 'local') item.file._duration = thumb.duration;
+      const t = fmtDur(thumb.duration);
+      if (t) dur.textContent = `⏱ ${t}`;
+      refreshClipCfgPanel(pv, item);
+    });
+    if (item.kind === 'srv' && !isImg) {
+      const t = fmtDur(item.asset.duration);
+      if (t) dur.textContent = `⏱ ${t}`;
+    }
+    if (isImg) buildImageCfgPanel(pv.querySelector('.clipcfg'), item);
+    else buildClipCfgPanel(pv.querySelector('.clipcfg'), item);
+    el.appendChild(div);
+  });
+  updateGlobalCfgVisibility();
+}
+
+// ---- 片段设置（截取起止 + 匀速/曲线播放） ----
+// 配置持久化在 file/asset 本体（_clipCfg），避免列表重渲染丢失
+function cfgHolder(item) {
+  return item.kind === 'local' ? item.file : item.asset;
+}
+function itemDuration(item) {
+  return item.kind === 'local' ? (item.file._duration || 0) : item.asset.duration;
+}
+function ensureCfg(item) {
+  const holder = cfgHolder(item);
+  if (!holder._clipCfg) {
+    holder._clipCfg = {
+      configured: false,
+      start: 0, end: itemDuration(item) || 0,
+      mode: 'const',           // const | curve
+      speed: 1,
+      points: [{u: 0, s: 1}, {u: 1, s: 1}],
+      curveSource: 'manual',   // manual | func（函数生成：sin/cos/tan/表达式）
+      func: {preset: 'sin', expr: '', s0: 1, A: 0.5, n: 1},
+    };
+  }
+  return holder._clipCfg;
+}
+function itemCfg(item) {
+  return cfgHolder(item)._clipCfg || null;
+}
+function updateGlobalCfgVisibility() {
+  const items = [...videos.map(f => ({kind: 'local', file: f})), ...srvVideos.map(a => ({kind: 'srv', asset: a}))];
+  const any = items.some(it => { const c = itemCfg(it); return c && c.configured; });
+  $('global-cfg').classList.toggle('show', any);
+}
+// 折线插值瞬时倍速（与后端 models.py 同口径）
+function instSpeedAt(points, u) {
+  if (u <= points[0].u) return points[0].s;
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i], b = points[i + 1];
+    if (u >= a.u && u <= b.u) {
+      if (b.u <= a.u) return b.s;
+      return a.s + (b.s - a.s) * (u - a.u) / (b.u - a.u);
+    }
+  }
+  return points[points.length - 1].s;
+}
+// 分段调和平均计曲线片段成片时长（与后端同口径）
+function curveTimelineDur(points, dur) {
+  const N = 10, K = 10, seg = dur / N;
+  let T = 0;
+  for (let i = 0; i < N; i++) {
+    let inv = 0;
+    for (let k = 0; k < K; k++) inv += 1 / instSpeedAt(points, (i + (k + 0.5) / K) / N);
+    T += seg * inv / K;
+  }
+  return T;
+}
+
+// ---- 函数式曲线（sin/cos/tan 及自定义表达式 f(u)） ----
+// 表达式安全编译：仅允许白名单标识符与运算符，试算通过后才生效
+const FN_WHITELIST = ['pi','e','u','sin','cos','tan','asin','acos','atan','abs','sqrt','exp','log','ln','min','max','floor','ceil','round'];
+const FN_PARAMS = ['u','sin','cos','tan','asin','acos','atan','abs','sqrt','exp','log','ln','min','max','floor','ceil','round','pi','e'];
+const FN_VALUES = [Math.sin, Math.cos, Math.tan, Math.asin, Math.acos, Math.atan, Math.abs, Math.sqrt, Math.exp, Math.log, Math.log, Math.min, Math.max, Math.floor, Math.ceil, Math.round, Math.PI, Math.E];
+function compileSpeedExpr(raw) {
+  const s = (raw || '').replace(/π/gi, 'pi').replace(/\s+/g, '');
+  if (!s) return null;
+  if (!/^[0-9ue+\-*/^(),.a-z]+$/i.test(s)) return null;
+  const ids = s.match(/[a-z]+/gi) || [];
+  if (ids.some(t => !FN_WHITELIST.includes(t.toLowerCase()))) return null;
+  const js = s.replace(/\^/g, '**');
+  let fn;
+  try { fn = new Function(...FN_PARAMS, `"use strict"; return (${js});`); } catch (_) { return null; }
+  for (let i = 0; i <= 20; i++) {
+    let v;
+    try { v = fn(i / 20, ...FN_VALUES); } catch (_) { return null; }
+    if (typeof v !== 'number' || !isFinite(v)) return null;
+  }
+  return u => fn(u, ...FN_VALUES);
+}
+// 根据函数配置构造求值器：预设 sin/cos/tan 或自定义表达式
+function buildFuncEvaluator(func) {
+  if (func.preset === 'expr') return compileSpeedExpr(func.expr);
+  const s0 = +func.s0, A = +func.A, n = +func.n;
+  if (![s0, A, n].every(x => isFinite(x))) return null;
+  const expr = {
+    sin: `${s0}+(${A})*sin(2*pi*(${n})*u)`,
+    cos: `${s0}+(${A})*cos(2*pi*(${n})*u)`,
+    tan: `${s0}+(${A})*tan(pi*(${n})*u)`,
+  }[func.preset];
+  return expr ? compileSpeedExpr(expr) : null;
+}
+// 函数曲线采样为控制点折线（原地写入 cfg.points，保持编辑器闭包引用同步）
+function sampleFuncToPoints(cfg) {
+  const f = buildFuncEvaluator(cfg.func);
+  if (!f) return false;
+  const N = 40;
+  const sampled = [];
+  for (let i = 0; i <= N; i++) {
+    const u = i / N;
+    const v = f(u);
+    if (typeof v !== 'number' || !isFinite(v)) return false;
+    sampled.push({u: +u.toFixed(4), s: +Math.max(CE_S_MIN, Math.min(CE_S_MAX, v)).toFixed(3)});
+  }
+  cfg.points.length = 0;
+  sampled.forEach(p => cfg.points.push(p));
+  return true;
+}
+
+// 曲线编辑器：拖动圆点调速度，双击空白加点，双击中间点删除
+const CE_W = 440, CE_H = 180, CE_S_MIN = 0.25, CE_S_MAX = 4;
+function makeCurveEditor(host, cfg, onChange) {
+  host.innerHTML = '';
+  const canvas = document.createElement('canvas');
+  canvas.width = CE_W * 2; canvas.height = CE_H * 2;
+  canvas.style.width = '100%'; canvas.style.maxWidth = CE_W + 'px';
+  canvas.style.aspectRatio = CE_W + '/' + CE_H;
+  host.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  const pad = {l: 46, r: 16, t: 14, b: 26};
+  const plotW = CE_W - pad.l - pad.r, plotH = CE_H - pad.t - pad.b;
+  const pts = cfg.points;
+  const uToX = u => pad.l + u * plotW;
+  const sToY = s => pad.t + (1 - (s - CE_S_MIN) / (CE_S_MAX - CE_S_MIN)) * plotH;
+  const xToU = x => Math.min(1, Math.max(0, (x - pad.l) / plotW));
+  const yToS = y => Math.min(CE_S_MAX, Math.max(CE_S_MIN, CE_S_MIN + (1 - (y - pad.t) / plotH) * (CE_S_MAX - CE_S_MIN)));
+  function draw() {
+    ctx.setTransform(2, 0, 0, 2, 0, 0);
+    ctx.clearRect(0, 0, CE_W, CE_H);
+    // 网格与刻度
+    ctx.font = '10px sans-serif';
+    [4, 2, 1, 0.5, 0.25].forEach(s => {
+      const y = sToY(s);
+      ctx.strokeStyle = s === 1 ? 'rgba(108,123,255,.55)' : 'rgba(140,146,165,.18)';
+      ctx.setLineDash(s === 1 ? [] : [4, 4]);
+      ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(CE_W - pad.r, y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#8b91a5';
+      ctx.textAlign = 'right';
+      ctx.fillText(s + 'x', pad.l - 6, y + 3);
+    });
+    [0, 0.5, 1].forEach(u => {
+      ctx.fillStyle = '#8b91a5';
+      ctx.textAlign = u === 0 ? 'left' : u === 1 ? 'right' : 'center';
+      ctx.fillText(u === 0 ? '0%' : u === 1 ? '100%' : '50%', uToX(u), CE_H - 8);
+    });
+    // 折线 / 匀速水平线（同一线条编辑器）
+    if (cfg.mode === 'const') {
+      // 匀速：一条水平线，拖动整体调整倍速
+      const y = sToY(cfg.speed);
+      ctx.strokeStyle = '#6c7bff'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(CE_W - pad.r, y); ctx.stroke();
+      [pad.l, CE_W - pad.r].forEach(x => {
+        ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = '#6c7bff'; ctx.fill();
+        ctx.strokeStyle = '#e7eaf2'; ctx.lineWidth = 1.5; ctx.stroke();
+      });
+      ctx.fillStyle = '#e7eaf2'; ctx.textAlign = 'center';
+      ctx.fillText(cfg.speed.toFixed(2) + 'x', (pad.l + CE_W - pad.r) / 2, y - 10);
+      return;
+    }
+    ctx.strokeStyle = '#6c7bff'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    pts.forEach((p, i) => i ? ctx.lineTo(uToX(p.u), sToY(p.s)) : ctx.moveTo(uToX(p.u), sToY(p.s)));
+    ctx.stroke();
+    // 填充
+    ctx.lineTo(uToX(1), sToY(CE_S_MIN)); ctx.lineTo(uToX(0), sToY(CE_S_MIN)); ctx.closePath();
+    ctx.fillStyle = 'rgba(108,123,255,.12)'; ctx.fill();
+    // 控制点（函数来源时采样点密集，只画折线不画圆点）
+    if (cfg.curveSource !== 'func') {
+      pts.forEach((p, i) => {
+        ctx.beginPath();
+        ctx.arc(uToX(p.u), sToY(p.s), 6, 0, Math.PI * 2);
+        ctx.fillStyle = (i === 0 || i === pts.length - 1) ? '#6c7bff' : '#3fb96f';
+        ctx.fill();
+        ctx.strokeStyle = '#e7eaf2'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = '#e7eaf2'; ctx.textAlign = 'center';
+        ctx.fillText(p.s.toFixed(2) + 'x', uToX(p.u), sToY(p.s) - 10);
+      });
+    }
+  }
+  function evPos(e) {
+    const r = canvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - r.left) * (CE_W / r.width),
+      y: (e.clientY - r.top) * (CE_H / r.height),
+    };
+  }
+  function hit(x, y) {
+    for (let i = 0; i < pts.length; i++) {
+      if (Math.hypot(uToX(pts[i].u) - x, sToY(pts[i].s) - y) < 11) return i;
+    }
+    return -1;
+  }
+  let dragIdx = -1, draggingLine = false;
+  canvas.addEventListener('pointerdown', e => {
+    const {x, y} = evPos(e);
+    if (cfg.mode === 'const') {
+      draggingLine = true;
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+      return;
+    }
+    if (cfg.curveSource === 'func') return;  // 函数曲线由参数驱动，不可直接拖拽
+    dragIdx = hit(x, y);
+    if (dragIdx >= 0) { try { canvas.setPointerCapture(e.pointerId); } catch (_) {} }
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (cfg.mode === 'const') {
+      if (!draggingLine) return;
+      const {y} = evPos(e);
+      const v = +yToS(y).toFixed(3);
+      // 吸附到 0.05 步进，避免拖动时数值抖动
+      cfg.speed = +Math.max(CE_S_MIN, Math.min(CE_S_MAX, Math.round(v / 0.05) * 0.05)).toFixed(2);
+      draw(); onChange();
+      return;
+    }
+    if (dragIdx < 0) return;
+    const {x, y} = evPos(e);
+    const p = pts[dragIdx];
+    p.s = +yToS(y).toFixed(3);
+    if (dragIdx > 0 && dragIdx < pts.length - 1) {
+      // 中间点：u 限制在前后点之间
+      p.u = +Math.min(pts[dragIdx + 1].u - 0.001, Math.max(pts[dragIdx - 1].u + 0.001, xToU(x))).toFixed(4);
+    }
+    draw(); onChange();
+  });
+  canvas.addEventListener('pointerup', () => { dragIdx = -1; draggingLine = false; });
+  canvas.addEventListener('dblclick', e => {
+    if (cfg.mode === 'const' || cfg.curveSource === 'func') return;  // 匀速/函数曲线不增删控制点
+    const {x, y} = evPos(e);
+    const idx = hit(x, y);
+    if (idx > 0 && idx < pts.length - 1 && pts.length > 2) {
+      pts.splice(idx, 1);          // 删除中间点
+    } else if (idx < 0) {
+      pts.push({u: +xToU(x).toFixed(4), s: +yToS(y).toFixed(3)});  // 空白处加点
+      pts.sort((a, b) => a.u - b.u);
+    }
+    draw(); onChange();
+  });
+  draw();
+  return { redraw: draw };
+}
+
+function buildClipCfgPanel(host, item) {
+  const cfg = ensureCfg(item);
+  const cfgUid = Math.random().toString(36).slice(2, 8);
+  host.innerHTML = `
+    <div class="cfg-head">✂️ 片段设置（${item.kind === 'local' ? item.file.name : item.asset.name}）</div>
+    <div class="cfg-row">
+      <label>开始 <input type="number" class="cfg-start" step="0.1" min="0"></label>
+      <label>结束 <input type="number" class="cfg-end" step="0.1" min="0"></label>
+      <span class="cfg-dur"></span>
+      <span class="cfg-reset">重置</span>
+    </div>
+    <div class="cfg-row">
+      <span>播放方式：</span>
+      <label><input type="radio" name="cfgmode-${cfgUid}" value="const"> 匀速</label>
+      <label><input type="radio" name="cfgmode-${cfgUid}" value="curve"> 曲线</label>
+      <span class="cfg-speed-val"></span>
+    </div>
+    <div class="cfg-curve-box">
+      <div class="curve-hint">匀速：上下拖动水平线整体调整倍速；曲线（手动）：拖动圆点调整该处倍速，双击空白加点、双击中间点删除；曲线（函数）：用 sin/cos/tan 等函数生成</div>
+      <div class="cfg-row" style="margin-bottom:6px">
+        <span>曲线来源：</span>
+        <label><input type="radio" name="cfgsrc-${cfgUid}" value="func"> 函数</label>
+        <label><input type="radio" name="cfgsrc-${cfgUid}" value="manual"> 手动</label>
+      </div>
+      <div class="cfg-func-box">
+        <div class="cfg-row">
+          <label>函数 <select class="fn-preset">
+            <option value="sin">sin 正弦</option>
+            <option value="cos">cos 余弦</option>
+            <option value="tan">tan 正切</option>
+            <option value="expr">f(u) 表达式</option>
+          </select></label>
+          <label class="fn-par">基准 <input type="number" class="fn-s0" step="0.1" min="0.25" max="4"></label>
+          <label class="fn-par">幅度 <input type="number" class="fn-a" step="0.05" min="0" max="3.75"></label>
+          <label class="fn-par">周期 <input type="number" class="fn-n" step="0.5" min="0.5" max="8"></label>
+        </div>
+        <div class="cfg-row fn-expr-row">
+          <label>f(u) = <input type="text" class="fn-expr" placeholder="如 1 + 0.5*sin(2*pi*u)"></label>
+          <span class="fn-err"></span>
+        </div>
+      </div>
+      <div class="curve-editor"></div>
+      <div class="curve-tl"></div>
+    </div>`;
+
+  const $q = s => host.querySelector(s);
+  const inStart = $q('.cfg-start'), inEnd = $q('.cfg-end');
+  const durSpan = $q('.cfg-dur');
+  const radios = [...host.querySelectorAll('input[type=radio]')];
+  const srcRadios = [...host.querySelectorAll('input[name^=cfgsrc]')];
+  const funcBox = $q('.cfg-func-box');
+  const fnPreset = $q('.fn-preset'), fnS0 = $q('.fn-s0'), fnA = $q('.fn-a'), fnN = $q('.fn-n');
+  const fnExpr = $q('.fn-expr'), fnErr = $q('.fn-err');
+  const fnPars = [...host.querySelectorAll('.fn-par')];
+  const speedVal = $q('.cfg-speed-val');
+  const curveTl = $q('.curve-tl');
+  let editor = null;
+
+  function clipDur() { return +(cfg.end - cfg.start).toFixed(3); }
+  function mark() {
+    if (!cfg.configured) { cfg.configured = true; updateGlobalCfgVisibility(); }
+  }
+  function refresh() {
+    const total = itemDuration(item) || 0;
+    if (!cfg.configured) { cfg.start = 0; cfg.end = total; }
+    inStart.max = total; inEnd.max = total;
+    inStart.value = cfg.start.toFixed(2); inEnd.value = cfg.end.toFixed(2);
+    inStart.disabled = inEnd.disabled = !total;
+    const d = clipDur();
+    durSpan.textContent = total ? `源片段 ${d.toFixed(2)}s / 全长 ${fmtDur(total)}` : '视频元数据加载中…';
+    radios.forEach(r => r.checked = (r.value === cfg.mode));
+    // 函数式曲线 UI 状态（仅曲线 + 函数来源时显示）
+    const funcActive = cfg.mode === 'curve' && cfg.curveSource === 'func';
+    srcRadios.forEach(r => r.checked = (r.value === cfg.curveSource));
+    funcBox.style.display = funcActive ? '' : 'none';
+    if (funcActive) {
+      fnPreset.value = cfg.func.preset;
+      fnS0.value = cfg.func.s0; fnA.value = cfg.func.A; fnN.value = cfg.func.n;
+      fnExpr.value = cfg.func.expr || '';
+      const isExpr = cfg.func.preset === 'expr';
+      fnPars.forEach(l => l.style.display = isExpr ? 'none' : '');
+      $q('.fn-expr-row').style.display = isExpr ? '' : 'none';
+    }
+    // 匀速与曲线共用同一线条编辑器：显示当前倍速/曲线范围与成片时长
+    if (cfg.mode === 'const') {
+      speedVal.textContent = `匀速 ${cfg.speed.toFixed(2)}x`;
+      curveTl.textContent = d > 0 ? `成片 ≈ ${(d / cfg.speed).toFixed(2)}s` : '';
+    } else {
+      const ss = cfg.points.map(p => p.s);
+      speedVal.textContent = `曲线 ${Math.min(...ss).toFixed(2)}~${Math.max(...ss).toFixed(2)}x`;
+      curveTl.textContent = d > 0 ? `成片 ≈ ${curveTimelineDur(cfg.points, d).toFixed(2)}s` : '';
+    }
+    if (!editor) {
+      editor = makeCurveEditor($q('.curve-editor'), cfg, () => { mark(); refresh(); });
+    } else {
+      editor.redraw();
+    }
+  }
+  inStart.onchange = () => {
+    const total = itemDuration(item) || 0;
+    cfg.start = Math.max(0, Math.min(cfg.end - 0.1, +inStart.value || 0));
+    mark(); refresh();
+  };
+  inEnd.onchange = () => {
+    const total = itemDuration(item) || 0;
+    cfg.end = Math.min(total, Math.max(cfg.start + 0.1, +inEnd.value || total));
+    mark(); refresh();
+  };
+  radios.forEach(r => r.onchange = () => {
+    if (r.value === cfg.mode) return;
+    if (cfg.mode === 'const') {
+      if (cfg.curveSource === 'func' && sampleFuncToPoints(cfg)) {
+        // 匀速 → 曲线（函数来源）：直接采样函数曲线
+      } else {
+        // 匀速 → 曲线（手动）：以当前倍速生成水平折线（原地修改，保持编辑器闭包引用同步）
+        cfg.points.length = 0;
+        cfg.points.push({u: 0, s: cfg.speed}, {u: 1, s: cfg.speed});
+      }
+    } else {
+      // 曲线 → 匀速：取控制点平均倍速
+      const ss = cfg.points.map(p => p.s);
+      cfg.speed = +(ss.reduce((a, b) => a + b, 0) / ss.length).toFixed(2);
+    }
+    cfg.mode = r.value;
+    mark(); refresh();
+  });
+  // ---- 函数式曲线（sin/cos/tan/表达式）事件 ----
+  function applyFunc() {
+    // 参数收敛到有效区间后重新采样
+    cfg.func.s0 = +Math.max(0.25, Math.min(4, +fnS0.value || 1)).toFixed(2);
+    cfg.func.A = +Math.max(0, Math.min(3.75, +fnA.value || 0)).toFixed(2);
+    cfg.func.n = +Math.max(0.5, Math.min(8, +fnN.value || 1)).toFixed(1);
+    const ok = sampleFuncToPoints(cfg);
+    fnErr.textContent = ok ? '' : '表达式无效，支持 sin/cos/tan/pi/u 及四则运算';
+    mark(); refresh();
+  }
+  srcRadios.forEach(r => r.onchange = () => {
+    if (r.value === cfg.curveSource) return;
+    cfg.curveSource = r.value;
+    if (cfg.curveSource === 'func') {
+      if (!sampleFuncToPoints(cfg)) {
+        fnErr.textContent = '表达式无效，支持 sin/cos/tan/pi/u 及四则运算';
+      }
+    }
+    // func → manual：保留采样点，可直接拖拽微调
+    mark(); refresh();
+  });
+  fnPreset.onchange = () => {
+    cfg.func.preset = fnPreset.value;
+    if (cfg.func.preset === 'expr' && !cfg.func.expr) cfg.func.expr = '1 + 0.5*sin(2*pi*u)';
+    applyFunc();
+  };
+  [fnS0, fnA, fnN].forEach(el => el.onchange = () => applyFunc());
+  fnExpr.onchange = () => { cfg.func.expr = fnExpr.value; applyFunc(); };
+  $q('.cfg-reset').onclick = () => {
+    cfgHolder(item)._clipCfg = null;
+    buildClipCfgPanel(host, item);
+    updateGlobalCfgVisibility();
+  };
+  host._refresh = refresh;
+  refresh();
+}
+function refreshClipCfgPanel(previewDiv, item) {
+  const panel = previewDiv.querySelector('.clipcfg');
+  if (panel && panel._refresh) panel._refresh();
+}
+function renderMusicList() {
+  const el = $('list-music');
+  el.innerHTML = '';
+  const items = [
+    ...(music ? [{ kind: 'local', file: music }] : []),
+    ...(srvMusic ? [{ kind: 'srv', asset: srvMusic }] : []),
+  ];
+  items.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'fileitem';
+    const url = item.kind === 'local' ? fileUrl(item.file) : `/api/assets/file/${encodeURIComponent(item.asset.name)}`;
+    const name = item.kind === 'local' ? item.file.name : item.asset.name;
+    const sizeMb = item.kind === 'local' ? fmtSize(item.file.size) : `${item.asset.size_mb} MB`;
+    div.innerHTML = `
+      <div class="meta">
+        <span>🎵</span>
+        <span class="name" title="${name}">${name}</span>
+        ${item.kind === 'srv' ? '<span class="src-tag">服务器</span>' : ''}
+      </div>
+      <span class="tag dur" data-dur></span>
+      <audio controls preload="metadata" src="${url}"></audio>
+      <span class="tag">${sizeMb}</span>
+      <span class="del">✕</span>`;
+    div.querySelector('.del').onclick = () => {
+      if (item.kind === 'local') { revokeUrl(music); music = null; } else { srvMusic = null; }
+      renderMusicList();
+    };
+    const dur = div.querySelector('.dur');
+    div.querySelector('audio').addEventListener('loadedmetadata', e => {
+      const t = fmtDur(e.target.duration);
+      if (t) dur.textContent = `⏱ ${t}`;
+    });
+    el.appendChild(div);
+  });
+}
+
+// ---- 转场效果演示（与渲染器 xfade 行为对应的动画近似） ----
+const TD_W = 232, TD_H = 96, TD_HOLD = 0.9;  // 两侧片段静止展示时长
+(function setupTransDemo() {
+  const canvas = $('trans-demo');
+  const ctx = canvas.getContext('2d');
+  canvas.width = TD_W * 2; canvas.height = TD_H * 2;  // DPR 2x
+  // B 帧离屏缓存（溶解的随机块揭示需按块取样）
+  const bcv = document.createElement('canvas');
+  bcv.width = TD_W * 2; bcv.height = TD_H * 2;
+  const bctx = bcv.getContext('2d');
+  // 溶解随机块顺序（12×6 网格，预洗牌）
+  const cells = [];
+  const cw = TD_W / 12, ch = TD_H / 6;
+  for (let gy = 0; gy < 6; gy++) for (let gx = 0; gx < 12; gx++) cells.push([gx * cw, gy * ch]);
+  for (let i = cells.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [cells[i], cells[j]] = [cells[j], cells[i]]; }
+  function drawCard(c, label, c1, c2) {
+    const g = c.createLinearGradient(0, 0, TD_W, TD_H);
+    g.addColorStop(0, c1); g.addColorStop(1, c2);
+    c.save();
+    c.beginPath(); c.rect(0, 0, TD_W, TD_H); c.clip();
+    c.fillStyle = g; c.fillRect(0, 0, TD_W, TD_H);
+    c.strokeStyle = 'rgba(255,255,255,.35)'; c.lineWidth = 1;
+    for (let i = 1; i <= 3; i++) {
+      c.beginPath();
+      c.moveTo(12, 16 + i * 15);
+      c.quadraticCurveTo(TD_W / 2, 8 + i * 17, TD_W - 12, 20 + i * 15);
+      c.stroke();
+    }
+    c.fillStyle = '#fff'; c.font = '700 20px sans-serif'; c.textAlign = 'center';
+    c.fillText(label, TD_W / 2, TD_H - 14);
+    c.restore();
+  }
+  bctx.setTransform(2, 0, 0, 2, 0, 0);
+  drawCard(bctx, '片段 B', '#1d6b46', '#3fb96f');
+  const drawA = () => drawCard(ctx, '片段 A', '#3d4b8f', '#6c7bff');
+  const drawB = (alpha = 1) => { ctx.globalAlpha = alpha; ctx.drawImage(bcv, 0, 0, TD_W, TD_H); ctx.globalAlpha = 1; };
+  const drawBClipped = (x0, w) => {
+    ctx.save(); ctx.beginPath(); ctx.rect(x0, 0, w, TD_H); ctx.clip();
+    ctx.drawImage(bcv, 0, 0, TD_W, TD_H); ctx.restore();
+  };
+  const drawBDissolve = p => {
+    const n = Math.round(p * cells.length);
+    for (let i = 0; i < n; i++) {
+      const [cx, cy] = cells[i];
+      ctx.drawImage(bcv, cx * 2, cy * 2, cw * 2, ch * 2, cx, cy, cw, ch);
+    }
+  };
+  let t0 = performance.now();
+  // 切换转场类型后立即从转场开始处演示；开关切换时同步控件显隐
+  const restart = () => { t0 = performance.now() - TD_HOLD * 1000; };
+  $('trans-type').addEventListener('change', restart);
+  $('trans-enable').addEventListener('change', () => {
+    const off = !$('trans-enable').checked;
+    $('global-cfg').classList.toggle('trans-off', off);
+    if (!off) restart();
+  });
+  function frame(now) {
+    if ($('global-cfg').classList.contains('show') && $('trans-enable').checked) {
+      const type = $('trans-type').value;
+      const dur = Math.max(0.1, Math.min(3, +$('trans-dur').value || 0.5));
+      const t = ((now - t0) / 1000) % (TD_HOLD * 2 + dur);
+      ctx.setTransform(2, 0, 0, 2, 0, 0);
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, TD_W, TD_H);
+      let p = 0, inTrans = false, done = false;
+      if (t >= TD_HOLD && t < TD_HOLD + dur) { p = (t - TD_HOLD) / dur; inTrans = true; }
+      else if (t >= TD_HOLD + dur) done = true;
+      if (done) drawB();
+      else if (!inTrans) drawA();
+      else switch (type) {
+        case 'fade':      drawA(); drawB(p); break;
+        case 'dissolve':  drawA(); drawBDissolve(p); break;
+        case 'wipeleft':  drawA(); drawBClipped(TD_W * (1 - p), TD_W * p); break;
+        case 'wiperight': drawA(); drawBClipped(0, TD_W * p); break;
+        case 'slideup':   drawA(); ctx.drawImage(bcv, 0, TD_H * (1 - p), TD_W, TD_H); break;
+      }
+      // 转场进度指示条
+      ctx.fillStyle = 'rgba(108,123,255,.9)';
+      ctx.fillRect(0, TD_H - 3, (inTrans ? p : done ? 1 : 0) * TD_W, 3);
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+
+// ---- 图片素材设置：展示时长 ----
+// 配置同样持久化在 file/asset 本体（_clipCfg），避免列表重渲染丢失
+function buildImageCfgPanel(host, item) {
+  const holder = cfgHolder(item);
+  if (!holder._clipCfg) holder._clipCfg = {configured: false, display: 3};
+  const cfg = holder._clipCfg;
+  const name = item.kind === 'local' ? item.file.name : item.asset.name;
+  host.innerHTML = `
+    <div class="cfg-head">🖼 图片设置（${name}）</div>
+    <div class="cfg-row">
+      <label>显示时长 <input type="number" class="cfg-display" step="0.5" min="0.5" max="30"></label> 秒
+      <span class="cfg-dur"></span>
+      <span class="cfg-reset">重置</span>
+    </div>
+    <div class="cfg-row" style="margin-bottom:0">
+      <span class="cfg-dur">图片不参与变速与截取，在成片中静止展示指定时长</span>
+    </div>`;
+  const $q = s => host.querySelector(s);
+  const inDur = $q('.cfg-display');
+  const durSpan = host.querySelector('.cfg-head + .cfg-row .cfg-dur');
+  function refresh() {
+    if (!cfg.configured) cfg.display = 3;
+    inDur.value = cfg.display.toFixed(1);
+    durSpan.textContent = `成片 ≈ ${cfg.display.toFixed(1)}s`;
+  }
+  inDur.onchange = () => {
+    cfg.display = Math.max(0.5, Math.min(30, +inDur.value || 3));
+    cfg.configured = true;
+    updateGlobalCfgVisibility();
+    refresh();
+  };
+  $q('.cfg-reset').onclick = () => {
+    holder._clipCfg = null;
+    buildImageCfgPanel(host, item);
+    updateGlobalCfgVisibility();
+  };
+  refresh();
+}
+
+// ---- 服务器素材选择弹窗 ----
+let modalKind = 'video';  // 当前弹窗用途: video | music
+$('pick-video-srv').onclick = () => openAssetModal('video');
+$('pick-music-srv').onclick = () => openAssetModal('music');
+$('modal-close').onclick = () => $('asset-modal').classList.remove('open');
+$('asset-modal').onclick = e => { if (e.target.id === 'asset-modal') $('asset-modal').classList.remove('open'); };
+
+async function openAssetModal(kind) {
+  modalKind = kind;
+  $('modal-title').textContent = kind === 'video' ? '选择服务器素材（视频 + 图片，可多选）' : '选择服务器音乐素材（单选）';
+  $('asset-list').innerHTML = '<div class="hint">加载中…</div>';
+  $('asset-modal').classList.add('open');
+  try {
+    const res = await fetch('/api/assets');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    // 视频与图片合并展示，图片带 image 标记（无时长）
+    const list = kind === 'video'
+      ? [...(data.videos || []).map(v => ({...v, image: false})), ...(data.images || []).map(im => ({...im, image: true}))]
+      : data.musics;
+    const box = $('asset-list');
+    box.innerHTML = '';
+    if (!list.length) {
+      box.innerHTML = '<div class="hint">服务器 test_assets 目录下没有可用素材</div>';
+      return;
+    }
+    const picked = kind === 'video' ? srvVideos : (srvMusic ? [srvMusic] : []);
+    list.forEach(a => {
+      const row = document.createElement('div');
+      row.className = 'asset-row' + (picked.some(p => p.name === a.name) ? ' picked' : '');
+      const meta = kind === 'video'
+        ? (a.image
+            ? `🖼 ${a.resolution} · ${a.size_mb} MB`
+            : `⏱ ${fmtDur(a.duration)} · ${a.resolution} · ${a.size_mb} MB`)
+        : `⏱ ${fmtDur(a.duration)} · ${a.size_mb} MB`;
+      row.innerHTML = `<span class="chk">✔</span><div class="info"><div>${a.image ? '🖼 ' : ''}${a.name}</div><div class="meta">${meta}</div></div>`;
+      row.onclick = () => {
+        if (kind === 'video') {
+          if (srvVideos.some(v => v.name === a.name)) {
+            srvVideos = srvVideos.filter(v => v.name !== a.name);
+          } else {
+            srvVideos.push(a);
+          }
+          row.classList.toggle('picked');
+          renderVideoList();
+        } else {
+          srvMusic = (srvMusic && srvMusic.name === a.name) ? null : a;
+          box.querySelectorAll('.asset-row').forEach(r => r.classList.remove('picked'));
+          if (srvMusic) row.classList.add('picked');
+          renderMusicList();
+        }
+      };
+      box.appendChild(row);
+    });
+  } catch (e) {
+    $('asset-list').innerHTML = `<div class="hint">素材加载失败: ${e.message}</div>`;
+  }
+}
+
+// ---- 规则模式切换 ----
+const EXAMPLES = {
+  text: `每个视频取中间 4 秒：第一段正常速度，第二段 2 倍速快放，第三段从 0.5 倍慢慢加速到 2 倍的曲线变速，片段间用 0.5 秒淡入淡出转场，配背景音乐并循环对齐成片时长，音乐结尾 2 秒淡出，输出 1080p 30fps。`,
+  json: JSON.stringify({
+    clips: [
+      { video_index: 0, start: 2, duration: 4, speed: 1 },
+      { video_index: 1, start: 3, duration: 4, speed: 2 },
+      { video_index: 2, start: 1, duration: 4, speed_curve: { type: "ramp_in", low: 0.5, high: 2 } }
+    ],
+    transition: { type: "fade", duration: 0.5 },
+    audio: { loop: true, volume: 0.8, fade_in: 1, fade_out: 2, keep_original: false },
+    output: { resolution: [1920, 1080], fps: 30, duration_policy: "follow_clips" }
+  }, null, 2)
+};
+
+// 曲线变速时长计算（与后端 models.py 同口径：分段调和平均）
+function smoothstep(u) { return u * u * (3 - 2 * u); }
+function instSpeed(c, u) {
+  const sc = c.speed_curve;
+  if (sc.type === 'custom') return instSpeedAt(sc.points || [{u: 0, s: 1}, {u: 1, s: 1}], u);
+  const s = smoothstep(Math.min(1, Math.max(0, u)));
+  if (sc.type === 'ramp_in') return sc.low + (sc.high - sc.low) * s;
+  if (sc.type === 'ramp_out') return sc.high + (sc.low - sc.high) * s;
+  return sc.low + (sc.high - sc.low) * Math.sin(Math.PI * u);
+}
+function clipTimelineDur(c) {
+  if (!c.speed_curve) return c.duration / (c.speed || 1);
+  const N = 10, K = 10, seg = c.duration / N;
+  let T = 0;
+  for (let i = 0; i < N; i++) {
+    let inv = 0;
+    for (let k = 0; k < K; k++) inv += 1 / instSpeed(c, (i + (k + 0.5) / K) / N);
+    T += seg * inv / K;
+  }
+  return T;
+}
+function clipSpeedLabel(c) {
+  if (c.speed_curve) {
+    const sc = c.speed_curve;
+    const names = { ramp_in: '慢→快', ramp_out: '快→慢', ease_in_out: '慢→快→慢' };
+    if (sc.type === 'custom') {
+      const ss = (sc.points || []).map(p => p.s);
+      const lo = ss.length ? Math.min(...ss) : 1, hi = ss.length ? Math.max(...ss) : 1;
+      return `曲线(自定义 ${lo.toFixed(2)}~${hi.toFixed(2)}x)`;
+    }
+    return `曲线(${names[sc.type] || sc.type} ${sc.low}~${sc.high}x)`;
+  }
+  return (c.speed || 1) === 1 ? '常速' : c.speed + 'x';
+}
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    ruleMode = tab.dataset.mode;
+    $('rule').classList.toggle('json', ruleMode === 'json');
+    $('rule').value = EXAMPLES[ruleMode];
+  };
+});
+$('rule').value = EXAMPLES.text;
+
+// ---- 提交 ----
+// 手动片段配置存在时，直接生成结构化计划（不经过 LLM）
+function buildManualPlan() {
+  const items = [...videos.map(f => ({kind: 'local', file: f})), ...srvVideos.map(a => ({kind: 'srv', asset: a}))];
+  if (!items.some(it => { const c = itemCfg(it); return c && c.configured; })) return null;
+  const clips = items.map((it, i) => {
+    const cfg = (() => { const c = itemCfg(it); return c && c.configured ? c : null; })();
+    // 静态图片：整图展示 display 秒，不截取不变速
+    if (itemIsImage(it)) {
+      const d = cfg ? +cfg.display : 3;
+      if (!(d > 0)) throw new Error(`第 ${i + 1} 个图片的显示时长无效，请检查图片设置`);
+      return {video_index: i, start: 0, duration: +d.toFixed(3), speed: 1};
+    }
+    const total = itemDuration(it) || 0;
+    const start = cfg ? cfg.start : 0;
+    const end = cfg ? cfg.end : total;
+    const d = +(end - start).toFixed(3);
+    if (d <= 0) throw new Error(`第 ${i + 1} 个视频的片段时长无效（开始 ≥ 结束），请检查片段设置`);
+    if (cfg && cfg.mode === 'curve') {
+      return {video_index: i, start: +start.toFixed(3), duration: d,
+              speed_curve: {type: 'custom', points: cfg.points.map(p => ({u: +p.u.toFixed(4), s: +p.s.toFixed(3)}))}};
+    }
+    return {video_index: i, start: +start.toFixed(3), duration: d, speed: cfg ? cfg.speed : 1};
+  });
+  const transType = $('trans-enable').checked ? $('trans-type').value : 'none';
+  const transDur = $('trans-enable').checked ? Math.max(0, Math.min(3, +$('trans-dur').value || 0)) : 0;
+  // 片段成片时长必须大于转场时长
+  if (transType !== 'none' && transDur > 0) {
+    clips.forEach((c, i) => {
+      const tl = c.speed_curve ? curveTimelineDur(c.speed_curve.points, c.duration) : c.duration / c.speed;
+      if (tl <= transDur) throw new Error(`第 ${i + 1} 个片段成片时长(${tl.toFixed(2)}s)需大于转场时长(${transDur}s)`);
+    });
+  }
+  return {
+    clips,
+    transition: {type: transType, duration: transDur},
+    audio: {loop: true, volume: 0.8, fade_in: 1, fade_out: 2, keep_original: false},
+    output: {resolution: [1920, 1080], fps: 30, duration_policy: 'follow_clips', lossless: $('lossless-enable').checked},
+  };
+}
+$('submit-btn').onclick = async () => {
+  hideError();
+  if (!videos.length && !srvVideos.length) return showError('请至少上传或选择一个视频或图片');
+  const rule = $('rule').value.trim();
+
+  let planJson = null;
+  try {
+    planJson = buildManualPlan();
+  } catch (e) {
+    return showError(e.message);
+  }
+  if (!planJson && !rule) return showError('请填写合成规则，或在视频列表中展开设置片段参数');
+
+  const fd = new FormData();
+  videos.forEach(f => fd.append('videos', f));
+  srvVideos.forEach(a => fd.append('video_assets', a.name));
+  if (music) fd.append('music', music);
+  if (srvMusic) fd.append('music_asset', srvMusic.name);
+  if (planJson) {
+    fd.append('rule', JSON.stringify(planJson));
+    fd.append('rule_format', 'json');
+    addLog('检测到手动片段配置，直接生成合成计划（不经 AI）');
+  } else {
+    fd.append('rule', rule);
+    fd.append('rule_format', ruleMode);
+  }
+
+  $('submit-btn').disabled = true;
+  $('progress-card').style.display = 'block';
+  $('result-card').style.display = 'none';
+  setProgress(0, '上传中…', 'run', '运行中');
+  addLog('提交任务…');
+
+  try {
+    const res = await fetch('/api/jobs', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    const { job_id } = await res.json();
+    addLog(`任务已创建: ${job_id}`);
+    listenEvents(job_id);
+  } catch (e) {
+    showError(e.message);
+    $('submit-btn').disabled = false;
+  }
+};
+
+function listenEvents(jobId) {
+  const es = new EventSource(`/api/jobs/${jobId}/events`);
+  es.onmessage = ev => {
+    const d = JSON.parse(ev.data);
+    setProgress(d.progress, d.stage_detail || d.status,
+      d.status === 'done' ? 'done' : d.status === 'failed' ? 'failed' : 'run',
+      { done: '完成', failed: '失败', rendering: '渲染中', planning: 'AI 规划', probing: '探测媒体', queued: '排队中' }[d.status] || d.status);
+    if (d.stage_detail) addLog(d.stage_detail + (d.progress < 100 ? ` (${d.progress}%)` : ''));
+    if (d.status === 'done') {
+      es.close();
+      showResult(jobId, d);
+      $('submit-btn').disabled = false;
+    } else if (d.status === 'failed') {
+      es.close();
+      showError(d.error || '合成失败');
+      $('submit-btn').disabled = false;
+    }
+  };
+  es.onerror = () => { es.close(); };
+}
+
+function showResult(jobId, d) {
+  $('result-card').style.display = 'block';
+  const url = `/api/jobs/${jobId}/result`;
+  $('player').src = url;
+  $('dl-link').href = url;
+  $('dl-link').download = `composition_${jobId}.mp4`;
+  if (d.plan) {
+    const total = d.plan.clips.reduce((s, c) => s + clipTimelineDur(c), 0)
+      - (d.plan.clips.length - 1) * (d.plan.transition?.duration || 0);
+    $('duration-info').textContent = `预计时长 ≈ ${total.toFixed(1)}s · ${d.plan.clips.length} 个片段 · 变速: ${d.plan.clips.map(clipSpeedLabel).join(' / ')}`;
+    $('plan-box').textContent = d.plan.reasoning ? `说明: ${d.plan.reasoning}\n\n` : '';
+    $('plan-box').textContent += JSON.stringify(d.plan, null, 2);
+  }
+  $('player').scrollIntoView({ behavior: 'smooth' });
+}
+
+function setProgress(pct, detail, status, label) {
+  $('bar').style.width = pct + '%';
+  $('pct').textContent = pct + '%';
+  $('stage-detail').textContent = detail;
+  const chip = $('status-chip');
+  chip.className = 'status-chip ' + status;
+  chip.textContent = label;
+}
+function addLog(msg) {
+  const el = $('log');
+  el.innerHTML += `<div>${new Date().toLocaleTimeString()} ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+function showError(msg) { $('errbox').style.display = 'block'; $('errbox').textContent = msg; }
+function hideError() { $('errbox').style.display = 'none'; }
+</script>
+</body>
+</html>
